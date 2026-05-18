@@ -152,11 +152,61 @@ PROJECT COUNT — TWO MODES:
 
 NEVER pick a project whose `never_for` list matches the JD's flavor.
 
+**ORDER — STRICTLY BY DESCENDING JD/COMPANY FIT (CRITICAL):**
+The order of `picks` in your JSON output IS the order the recruiter will see
+on the page. Position matters more than count:
+- `picks[0]` = the SINGLE STRONGEST project for THIS specific JD + company.
+  Should share the most concrete tech / domain overlap with the JD.
+  This becomes the LEAD paragraph (most space, most facts cited).
+- `picks[1]` = second-best fit. Different angle from picks[0].
+- `picks[2]` = breadth / brand-name pick if not already in picks[0:2].
+- `picks[3]` = optional 4th supporting project for SDE/full-stack roles only.
+
+NEVER order alphabetically or chronologically.
+
 Output a SINGLE JSON object:
   {{"picks": ["project_id_1", "project_id_2", ...], "rationale": "1 sentence"}}
-
-`picks` must contain 2-4 project_ids exactly as named in the library.
 """
+
+
+def extract_jd_keywords(jd: str, title: str, company: str) -> list[str]:
+    """Pull 8-12 specific tech/domain keywords from the JD that the blurb must
+    mirror. Uses gpt-4o-mini. Filters soft buzzwords (modernization, innovation,
+    etc.) that recruiters don't search for."""
+    if not jd or len(jd) < 50:
+        return []
+    sys_prompt = """Extract 8-12 RECRUITER-VISIBLE keywords from a job description.
+
+Keywords MUST be one of:
+- Specific tech / frameworks / tools: Python, React, Postgres, FastAPI, AWS, LangChain, TypeScript, Node.js, PyTorch, etc.
+- Concrete domain terms: fintech, healthcare, robotics, agent eval, distributed systems, FHIR, DICOM, etc.
+- Concrete role responsibilities: data pipelines, batch processing, production reliability, latency optimization, etc.
+- Seniority / scope markers: intern, full-stack, backend, infra, mobile.
+
+NEVER extract these soft buzzwords (recruiters expect them, mentioning them is filler):
+- modernization, modernize, transformation, transform, innovation, innovative, optimization
+- collaboration, teamwork, ownership, scalability (alone), excellence, leadership, mission, vision
+- passion, exciting, opportunity, growth, impact, cutting-edge
+- the company's product name (unless it's a tech term)
+- generic adjectives: efficient, robust, seamless, modern, cutting-edge
+
+Every word must be one a recruiter would literally search for on a resume keyword filter.
+
+Output: JSON object: {"keywords": ["word1", "word2", ...]}"""
+    user = f"""TITLE: {title}
+COMPANY: {company}
+
+JD:
+{jd[:3500]}
+
+Extract 8-12 keywords. JSON only."""
+    try:
+        raw = llm_call(sys_prompt, user, max_tokens=300, model="gpt-4o-mini")
+        obj = parse_json_from_response(raw)
+        kws = obj.get("keywords") or []
+        return [k for k in kws if isinstance(k, str) and len(k) > 1][:12]
+    except Exception:
+        return []
 
 
 def pick_projects(jd: str, title: str, company: str) -> tuple[list[str], str]:
@@ -255,7 +305,8 @@ no bullet lists. Plain paragraphs separated by blank lines.
 
 
 def write_blurb(*, jd: str, title: str, company: str,
-                project_ids: list[str], critic_feedback: str = "") -> str:
+                project_ids: list[str], critic_feedback: str = "",
+                jd_keywords: list[str] | None = None) -> str:
     """Single LLM call that produces the full FIT-PITCH blurb."""
     profile = load_profile()
     kb_blocks: list[str] = []
@@ -272,16 +323,26 @@ def write_blurb(*, jd: str, title: str, company: str,
             f"re-output the entire blurb:\n{critic_feedback}\n"
         )
 
+    kw_block = ""
+    if jd_keywords:
+        kw_block = (
+            f"\nJD KEYWORDS (must mirror ALL of these naturally — recruiter "
+            f"scanning should see THEIR vocabulary back):\n"
+            f"  {', '.join(jd_keywords)}\n"
+        )
+
     user = f"""COMPANY: {company}
 ROLE TITLE: {title}
 
 JD (first 4000 chars):
 {jd[:4000]}
-
-PROJECT KBs to ground from (use ONLY facts from these):
+{kw_block}
+PROJECT KBs to ground from (use ONLY facts from these, in this order):
 {kb_dump}
 {critic_block}
-Write the FIT-PITCH blurb now. Plain prose, no markdown headers."""
+Write the FIT-PITCH blurb now. Plain prose, no markdown headers.
+KB #1 is the LEAD project paragraph. Honor the KB order strictly.
+Mirror the JD KEYWORDS where they naturally fit."""
 
     client = openai_client()
     resp = client.chat.completions.create(
@@ -303,7 +364,8 @@ Write the FIT-PITCH blurb now. Plain prose, no markdown headers."""
 
 def compose_blurb(jd: str, title: str, company: str,
                   min_projects: int = 2, max_projects: int = 4) -> str:
-    """Two-step LLM pipeline + one critic retry. Returns clean prose."""
+    """Pipeline: picker (gpt-4o-mini) + keyword extractor + writer (gpt-4o)
+    + critic retry (cliches) + keyword retry (target 100% coverage)."""
     picks, _rationale = pick_projects(jd, title, company)
     if len(picks) < min_projects:
         pool_ids = list(load_full_pool().keys())
@@ -313,13 +375,43 @@ def compose_blurb(jd: str, title: str, company: str,
             if len(picks) >= max_projects:
                 break
     picks = picks[:max_projects]
+    jd_kws = extract_jd_keywords(jd, title, company)
 
-    blurb = write_blurb(jd=jd, title=title, company=company, project_ids=picks)
+    def _missed(text: str) -> list[str]:
+        t = (text or "").lower()
+        return [k for k in jd_kws if k.lower() not in t]
+
+    blurb = write_blurb(jd=jd, title=title, company=company,
+                        project_ids=picks, jd_keywords=jd_kws)
+
+    # Critic retry 1: AI cliches
     issues = quick_checks(blurb)
     if issues:
         feedback = "\n".join(f"  • {p}" for p in issues)
         blurb = write_blurb(jd=jd, title=title, company=company,
-                            project_ids=picks, critic_feedback=feedback)
+                            project_ids=picks, critic_feedback=feedback, jd_keywords=jd_kws)
+
+    # Critic retry 2-4: JD keyword coverage. Target = 100% (zero missed).
+    for _ in range(3):
+        if not jd_kws:
+            break
+        missed = _missed(blurb)
+        if not missed:
+            break
+        kw_feedback = (
+            f"JD keyword coverage too low ({len(jd_kws) - len(missed)}/{len(jd_kws)} hit). "
+            f"You missed: {', '.join(missed)}.\n\n"
+            f"HARD REQUIREMENT — every missed keyword MUST appear in your output. Strategies:\n"
+            f"  1. If a project uses the exact tech, name it in that paragraph.\n"
+            f"  2. If a project uses an equivalent tech, write 'X (Y-compatible)' or 'X, similar to Y'.\n"
+            f"  3. Attach the keyword to whichever project's domain is closest "
+            f"     ('familiar with React+TypeScript patterns from my Next.js side projects').\n"
+            f"  4. The OPENING paragraph can mention keywords as 'the X/Y/Z stack I'd be working in'.\n\n"
+            f"GOAL: 100% coverage. Do not invent metrics or accomplishments. Paraphrasing "
+            f"tech-equivalence is fine; fabricating measurable results is not."
+        )
+        blurb = write_blurb(jd=jd, title=title, company=company,
+                            project_ids=picks, critic_feedback=kw_feedback, jd_keywords=jd_kws)
 
     return scrub_ai_tells(blurb)
 

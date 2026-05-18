@@ -247,8 +247,9 @@ _SMART_BOOKMARKLET_JS = (
     "if(m1)lid=m1[1]; else if(m2)lid=m2[1]; else if(m3)lid=m3[1];"
     "if(!lid){for(const a of document.querySelectorAll('a[href^=\"/jobs/\"]')){const h=a.getAttribute('href')||'';const mh=h.match(/^\\/jobs\\/(\\d+)-/);if(mh){lid=mh[1];break;}}}"
     "const findTextareas=()=>{let arr=[...document.querySelectorAll('.ReactModal__Content textarea,[role=\"dialog\"] textarea,textarea[name*=\"customQuestionAnswers\"],textarea[name=\"userNote\"]')];if(!arr.length){arr=[...document.querySelectorAll('textarea')].filter(t=>t.offsetParent&&t.offsetHeight>20);}return [...new Set(arr)];};"
+    "const findApplyBtn=()=>[...document.querySelectorAll('button,a')].find(b=>{const t=(b.textContent||'').trim();return /^(apply|apply now)$/i.test(t)&&b.offsetParent;});"
     "let tas=findTextareas();"
-    "if(!tas.length){const applyBtns=[...document.querySelectorAll('button,a')].filter(b=>{const t=(b.textContent||'').trim();return /^(apply|apply now)$/i.test(t)&&b.offsetParent;});for(const btn of applyBtns){btn.click();await new Promise(r=>setTimeout(r,2500));tas=findTextareas();if(tas.length)break;}}"
+    "if(!tas.length){let applyBtn=findApplyBtn();let waited=0;while(!applyBtn&&waited<8000){await new Promise(r=>setTimeout(r,500));waited+=500;applyBtn=findApplyBtn();}if(applyBtn){applyBtn.click();let twait=0;while(!tas.length&&twait<8000){await new Promise(r=>setTimeout(r,500));twait+=500;tas=findTextareas();}}}"
     "if(!tas.length){const ext=[...document.querySelectorAll('button,a')].find(el=>/apply on (website|company website)/i.test(el.textContent));if(ext){try{const r=await fetch('http://localhost:9876/api/blurb/'+lid);if(r.ok){const j=await r.json();await navigator.clipboard.writeText(j.blurb||'');alert('External apply detected. Blurb copied to clipboard. Click Apply on website + paste into the company form.');return;}}catch(e){}alert('External apply (no Wellfound textarea). Click Apply on website.');return;}}"
     "const modalRoot=document.querySelector('.ReactModal__Content, [role=\"dialog\"]');"
     "const radioGroups={};"
@@ -271,13 +272,73 @@ _SMART_BOOKMARKLET_JS = (
     "if(!resp.ok){pd.innerHTML='Error: '+(resp.error||'failed');setTimeout(()=>pd.remove(),5000);return;}"
     "let filled=0;"
     "for(const ans of resp.answers||[]){const ta=tas.find(t=>(t.name||'')===ans.name)||tas[(ans.idx||0)];if(!ta||!ans.answer)continue;const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;setter.call(ta,ans.answer);ta.dispatchEvent(new Event('input',{bubbles:true}));ta.dispatchEvent(new Event('change',{bubbles:true}));filled++;}"
-    "const src=resp.source==='bundle'?'(reused dashboard blurb, no LLM cost)':resp.source==='mixed'?'(bundle blurb + LLM for other questions)':'(gpt-4o-mini)';"
-    "pd.innerHTML='Filled '+filled+'/'+tas.length+' textarea(s)'+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+'<br><span style=\"font-size:11px;color:#854d0e;\">'+src+'</span><br>Review + Send. <span style=\"font-size:11px;color:#475569;\">(watching for Send banner...)</span>';"
+    "let srcLabel;"
+    "if(resp.source==='bundle'){srcLabel='\\u267b\\ufe0f Reused dashboard blurb (no LLM cost)';pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';}"
+    "else if(resp.source==='fitpitch'){srcLabel='\\ud83d\\udcdd Full FIT-PITCH (gpt-4o, 4-paragraph)';pd.style.background='#e0e7ff';pd.style.borderColor='#6366f1';}"
+    "else if(resp.source==='mixed'){srcLabel='\\u267b\\ufe0f Mixed: bundle + LLM';pd.style.background='#fef3c7';pd.style.borderColor='#f59e0b';}"
+    "else{srcLabel='\\ud83e\\udd16 Fresh gpt-4o-mini (short answer)';pd.style.background='#dbeafe';pd.style.borderColor='#2563eb';}"
+    "let kwLine='';if(resp.jd_keyword_total){kwLine='<br><span style=\"font-size:11px;color:#475569;\">JD keywords used: '+resp.jd_keyword_hits+'/'+resp.jd_keyword_total+' ('+(resp.jd_keywords||[]).slice(0,5).join(', ')+')</span>';}"
+    "pd.innerHTML='Filled '+filled+'/'+tas.length+' textarea(s)'+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+'<br><b>'+srcLabel+'</b>'+kwLine+'<br>Review + Send. <span style=\"font-size:11px;color:#475569;\">(watching for Send banner...)</span>';"
     "const SUCCESS_RE=/Congrats!?\\s*Your application has been submitted|SUCCESS!?\\s*YOUR APPLICATION HAS BEEN SENT/i;"
     "const watchStart=Date.now();"
     "const watcher=setInterval(async()=>{"
     "if(Date.now()-watchStart>5*60*1000){clearInterval(watcher);pd.innerHTML='Watcher timed out. Click I-submitted-it on dashboard if you sent.';setTimeout(()=>pd.remove(),5000);return;}"
     "if(SUCCESS_RE.test(document.body.innerText)){clearInterval(watcher);if(lid){try{await fetch('http://localhost:9876/api/confirm_submitted/'+lid,{method:'POST'});}catch(e){}}pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';pd.innerHTML='Submitted detected! '+(lid?'Moved to history on dashboard.':'(no listing_id detected, mark manually).');setTimeout(()=>pd.remove(),5000);}"
+    "},1500);"
+    "})();"
+)
+
+
+# Auto-loop bookmarklet: same Fill-smart logic + queue management.
+# After Send detected, pops current job from queue and navigates to next URL.
+_AUTO_LOOP_BOOKMARKLET_JS = (
+    "javascript:(async()=>{"
+    "let queue,fresh;"
+    "try{const r=await fetch('http://localhost:9876/api/auto_queue');const d=await r.json();if(d.paused){alert('Auto loop is PAUSED on dashboard. Click Resume first.');return;}fresh=d.queue||[];if(!fresh.length){alert('Queue empty.');return;}}catch(e){alert('Cannot reach dashboard at localhost:9876.');return;}"
+    "const cached=JSON.parse(sessionStorage.getItem('wfLoopQueue')||'null');"
+    "if(cached&&cached.length&&cached[0].listing_id===fresh[0].listing_id){queue=cached;}else{queue=fresh;sessionStorage.setItem('wfLoopQueue',JSON.stringify(queue));sessionStorage.setItem('wfLoopActive','1');sessionStorage.setItem('wfLoopStartedAt',Date.now().toString());}"
+    "let currentLid=null;"
+    "const m1=location.pathname.match(/jobs\\/(\\d+)-/);"
+    "const m2=location.search.match(/job_listing_slug=(\\d+)-/);"
+    "if(m1)currentLid=m1[1];else if(m2)currentLid=m2[1];"
+    "if(!currentLid||currentLid!==queue[0].listing_id){location.href=queue[0].url;return;}"
+    "let lid=currentLid;"
+    "const findTextareas=()=>{let arr=[...document.querySelectorAll('.ReactModal__Content textarea,[role=\"dialog\"] textarea,textarea[name*=\"customQuestionAnswers\"],textarea[name=\"userNote\"]')];if(!arr.length){arr=[...document.querySelectorAll('textarea')].filter(t=>t.offsetParent&&t.offsetHeight>20);}return [...new Set(arr)];};"
+    "const findApplyBtn=()=>[...document.querySelectorAll('button,a')].find(b=>{const t=(b.textContent||'').trim();return /^(apply|apply now)$/i.test(t)&&b.offsetParent;});"
+    "let tas=findTextareas();"
+    "if(!tas.length){let applyBtn=findApplyBtn();let waited=0;while(!applyBtn&&waited<8000){await new Promise(r=>setTimeout(r,500));waited+=500;applyBtn=findApplyBtn();}if(applyBtn){applyBtn.click();let twait=0;while(!tas.length&&twait<8000){await new Promise(r=>setTimeout(r,500));twait+=500;tas=findTextareas();}}}"
+    "if(!tas.length){const ext=[...document.querySelectorAll('button,a')].find(el=>/apply on (website|company website)/i.test(el.textContent));if(ext){alert('External apply detected. Skipping to next in queue.');queue.shift();sessionStorage.setItem('wfLoopQueue',JSON.stringify(queue));if(queue.length){location.href=queue[0].url;}else{sessionStorage.removeItem('wfLoopQueue');sessionStorage.removeItem('wfLoopActive');alert('Auto loop complete.');}return;}}"
+    "const modalRoot=document.querySelector('.ReactModal__Content, [role=\"dialog\"]');"
+    "const radioGroups={};"
+    "if(modalRoot){for(const radio of modalRoot.querySelectorAll('input[type=\"radio\"]')){if(!radio.name)continue;(radioGroups[radio.name]=radioGroups[radio.name]||[]).push(radio);}}"
+    "let radiosFilled=0;"
+    "if(Object.keys(radioGroups).length){for(const name of Object.keys(radioGroups)){const radios=radioGroups[name];if(radios.length<2)continue;let qtext='';let p=radios[0].closest('label')?.parentElement||radios[0].parentElement;for(let d=0;d<6&&p;d++){const t=(p.textContent||'').trim();if(t&&t.length>10&&t.length<400){qtext=t.split(/\\n/)[0].trim();break;}p=p.parentElement;}const ql=qtext.toLowerCase();let pick=null;if(/visa|sponsor|h[\\s-]?1b|opt|cpt/.test(ql))pick='yes';else if(/citizen|green card|permanent resident/.test(ql))pick='no';else if(/willing to travel/.test(ql))pick='yes';else if(/relocate|live in.*new york|nyc/.test(ql))pick='yes';else if(/authorized to work|legally allowed/.test(ql))pick='yes';else if(/start.*immediate|available.*start/.test(ql))pick='yes';else if(/over 18|at least 18/.test(ql))pick='yes';else if(/felony|criminal|convicted/.test(ql))pick='no';else if(/(remote|hybrid|onsite|in[- ]?office)/.test(ql))pick='__skip__';if(pick&&pick!=='__skip__'){const target=radios.find(r=>{const lbl=r.closest('label')?.textContent||r.value||'';return new RegExp('^\\\\s*'+pick+'\\\\b','i').test(lbl);});if(target&&!target.checked){target.click();radiosFilled++;}}}}"
+    "const getPrompt=(ta)=>{let p=ta.parentElement;for(let d=0;d<6&&p;d++){const txt=(p.textContent||'').replace(ta.value||'','').trim();if(txt&&txt.length>5&&txt.length<500){const first=txt.split(/\\n+/)[0].trim();if(first)return first.slice(0,400);}p=p.parentElement;}return '';};"
+    "const questions=tas.map((ta,i)=>({name:ta.name||'textarea_'+i,prompt:getPrompt(ta),idx:i}));"
+    "const jdEl=document.querySelector('[class*=\"jdBody\"],[class*=\"description\"],main article,main section');"
+    "const jd=((jdEl&&jdEl.innerText)||document.body.innerText||'').slice(0,4500);"
+    "const company=document.querySelector('a[href^=\"/company/\"]')?.textContent?.trim()||document.title.split(' at ')[1]?.split(' \\u2022 ')[0]||'';"
+    "const title=document.querySelector('h1,h2')?.textContent?.trim()||document.title.split(' at ')[0]||'';"
+    "const pd=document.createElement('div');"
+    "pd.style.cssText='position:fixed;top:20px;right:20px;background:#fef3c7;border:2px solid #f59e0b;padding:14px 18px;border-radius:8px;font-family:system-ui;font-size:14px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-width:340px;';"
+    "const progress=queue.length;"
+    "pd.innerHTML='\\ud83d\\udd01 Auto loop \\u2014 '+progress+' job(s) left<br>Generating '+questions.length+' answer(s)...';"
+    "document.body.appendChild(pd);"
+    "let resp;"
+    "try{resp=await(await fetch('http://localhost:9876/api/answer_questions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({listing_id:lid,company,title,jd,questions})})).json();}catch(e){pd.innerHTML='Backend unreachable.';setTimeout(()=>pd.remove(),5000);return;}"
+    "if(!resp.ok){pd.innerHTML='Error: '+(resp.error||'failed');return;}"
+    "let filled=0;"
+    "for(const ans of resp.answers||[]){const ta=tas.find(t=>(t.name||'')===ans.name)||tas[(ans.idx||0)];if(!ta||!ans.answer)continue;const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;setter.call(ta,ans.answer);ta.dispatchEvent(new Event('input',{bubbles:true}));ta.dispatchEvent(new Event('change',{bubbles:true}));filled++;}"
+    "let srcLabel='';if(resp.source==='bundle'){srcLabel='\\u267b\\ufe0f Reused bundle (free)';pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';}else if(resp.source==='fitpitch'){srcLabel='\\ud83d\\udcdd Full FIT-PITCH (gpt-4o)';pd.style.background='#e0e7ff';pd.style.borderColor='#6366f1';}else if(resp.source==='mixed'){srcLabel='\\u267b\\ufe0f Mixed';pd.style.background='#fef3c7';}else{srcLabel='\\ud83e\\udd16 gpt-4o-mini';pd.style.background='#dbeafe';pd.style.borderColor='#2563eb';}"
+    "let kwLine='';if(resp.jd_keyword_total){kwLine='<br><span style=\"font-size:11px;color:#475569;\">JD keywords: '+resp.jd_keyword_hits+'/'+resp.jd_keyword_total+' ('+(resp.jd_keywords||[]).slice(0,6).join(', ')+')</span>';}"
+    "pd.innerHTML='\\ud83d\\udd01 Loop ('+progress+' left) - <b>'+(queue[0].company||'?')+'</b><br>Filled '+filled+'/'+tas.length+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+' '+srcLabel+kwLine+'<br><b>Review + click Send</b>. <span style=\"font-size:11px;color:#475569;\">(then auto-advances)</span>';"
+    "const SUCCESS_RE=/Congrats!?\\s*Your application has been submitted|SUCCESS!?\\s*YOUR APPLICATION HAS BEEN SENT/i;"
+    "const watchStart=Date.now();"
+    "const watcher=setInterval(async()=>{"
+    "if(Date.now()-watchStart>10*60*1000){clearInterval(watcher);pd.innerHTML='\\u23f1\\ufe0f Watcher timed out. Loop paused.';setTimeout(()=>pd.remove(),5000);return;}"
+    "let pauseStatus=false;try{pauseStatus=(await(await fetch('http://localhost:9876/api/auto_queue')).json()).paused;}catch(e){}"
+    "if(pauseStatus){clearInterval(watcher);sessionStorage.removeItem('wfLoopActive');pd.style.background='#fee2e2';pd.style.borderColor='#b91c1c';pd.innerHTML='\\u23f8\\ufe0f Loop paused via dashboard.';setTimeout(()=>pd.remove(),6000);return;}"
+    "if(SUCCESS_RE.test(document.body.innerText)){clearInterval(watcher);if(lid){try{await fetch('http://localhost:9876/api/confirm_submitted/'+lid,{method:'POST'});}catch(e){}}let q=JSON.parse(sessionStorage.getItem('wfLoopQueue')||'[]');q.shift();sessionStorage.setItem('wfLoopQueue',JSON.stringify(q));pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';if(q.length){pd.innerHTML='\\u2705 Sent! Loading next: <b>'+q[0].company+'</b> ('+q.length+' left)...';setTimeout(()=>{location.href=q[0].url;},1500);}else{sessionStorage.removeItem('wfLoopActive');sessionStorage.removeItem('wfLoopQueue');pd.innerHTML='\\ud83c\\udf89 Loop complete!';setTimeout(()=>pd.remove(),8000);}}"
     "},1500);"
     "})();"
 )
@@ -297,8 +358,27 @@ def _render_bookmarklet_banner() -> str:
         <div style="margin:18px 0;">
           <a href="{_esc(_SMART_BOOKMARKLET_JS)}" class="bookmarklet-drag"
              onclick="alert('Drag this button to your bookmark bar — do not click it here.'); return false;">
-            ⚡ Fill smart  ← drag to bookmark bar
+            ⚡ Fill smart  ← drag to bookmark bar (single job)
           </a>
+        </div>
+
+        <div style="margin:18px 0;padding:12px 14px;background:#fef9c3;border-radius:8px;border:1px dashed #ca8a04;">
+          <div style="font-size:13px;color:#854d0e;font-weight:600;margin-bottom:8px;">
+            🔁 Auto loop — process N pending jobs in sequence
+          </div>
+          <a href="{_esc(_AUTO_LOOP_BOOKMARKLET_JS)}" class="bookmarklet-drag" style="background:linear-gradient(135deg,#a855f7,#7c3aed);"
+             onclick="alert('Drag to bookmark bar.\\n\\nUsage:\\n1. Click on ANY Wellfound page (or this dashboard).\\n2. Auto-opens first queued job.\\n3. Click bookmarklet again → auto-fills, watches for Send.\\n4. You review + click Send.\\n5. Auto-advances to next job in queue.\\n6. Repeats until queue empty or you click Pause on dashboard.'); return false;">
+            🔁 Auto smart loop  ← drag to bookmark bar (batch)
+          </a>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <label style="font-size:12px;color:#475569;">Cap to:</label>
+            <input id="loop-limit" type="number" min="1" max="500" value="5" style="width:60px;padding:5px 8px;border-radius:5px;border:1px solid #fde047;font-size:12px;">
+            <button onclick="loopSetLimit()" style="padding:6px 12px;border-radius:5px;border:1px solid #fde047;background:white;cursor:pointer;font-size:12px;">📏 Set limit</button>
+            <button onclick="loopSetLimit(null)" style="padding:6px 12px;border-radius:5px;border:1px solid #fde047;background:white;cursor:pointer;font-size:12px;">∞ No cap</button>
+            <button onclick="loopPause()" style="padding:6px 12px;border-radius:5px;border:1px solid #fde047;background:white;cursor:pointer;font-size:12px;">⏸️ Pause</button>
+            <button onclick="loopResume()" style="padding:6px 12px;border-radius:5px;border:1px solid #fde047;background:white;cursor:pointer;font-size:12px;">▶️ Resume</button>
+            <span id="loop-status" style="font-size:11px;color:#475569;width:100%;margin-top:4px;"></span>
+          </div>
         </div>
 
         <details style="margin-top:14px;">
@@ -541,6 +621,32 @@ async function openWellfound(id, url) {{ await _post('/api/save_blurb/' + id, {{
 async function deletePending(id) {{ if (!confirm('Delete pending bundle?')) return; const r = await _post('/api/delete_pending/' + id); if (r.ok) document.querySelector(`[data-listing-id="${{id}}"]`).remove(); else _show(id, 'error: '+(r.error||'?'), false); }}
 async function confirmSubmitted(id) {{ if (!confirm('Mark as submitted?')) return; const r = await _post('/api/confirm_submitted/' + id); if (r.ok) {{ _show(id, 'marked submitted', true); setTimeout(()=>window.location.reload(), 700); }} else {{ _show(id, 'error: '+(r.error||'?'), false); }} }}
 async function markExternal(id) {{ const r = await _post('/api/mark_external/' + id); if (r.ok) {{ _show(id, 'marked external', true); setTimeout(()=>window.location.reload(), 600); }} else {{ _show(id, 'error: '+(r.error||'?'), false); }} }}
+
+async function loopPause() {{ await _post('/api/loop_pause'); _initLoopStatus(); }}
+async function loopResume() {{ await _post('/api/loop_resume'); _initLoopStatus(); }}
+async function loopSetLimit(forceVal) {{
+  let limit = forceVal;
+  if (limit === undefined) {{
+    const el = document.getElementById('loop-limit');
+    limit = parseInt(el.value, 10);
+    if (!limit || limit < 1) {{ alert('Enter a number ≥ 1, or click ∞ No cap'); return; }}
+  }}
+  const r = await _post('/api/loop_set_limit', {{limit: limit}});
+  if (r.ok) {{ _initLoopStatus(); alert((limit === null ? '∞ Cap removed' : '📏 Capped to ' + limit + ' jobs') + '.\\n\\nIf a loop is already running on a Wellfound tab, close + reopen to apply.'); }}
+}}
+async function _initLoopStatus() {{
+  try {{
+    const r = await fetch('/api/auto_queue');
+    const j = await r.json();
+    const el = document.getElementById('loop-status');
+    if (!el) return;
+    const limitStr = j.limit ? ` (capped at ${{j.limit}})` : ' (no cap)';
+    el.textContent = (j.paused ? '⏸️ paused · ' : '▶️ ') + j.count + ' jobs queued' + limitStr + ' · total available: ' + j.total_available;
+    const inp = document.getElementById('loop-limit');
+    if (inp && j.limit) inp.value = j.limit;
+  }} catch(e){{}}
+}}
+_initLoopStatus();
 </script>
 </body>
 </html>
@@ -669,6 +775,92 @@ def delete_pending(listing_id: str):
     return {"ok": False, "error": "not found"}
 
 
+# ---------- Auto-loop endpoints --------------------------------------------
+
+_LOOP_FLAG_FILE = Path("/tmp/wf_loop_state.json")
+
+
+def _read_loop_state() -> dict:
+    if not _LOOP_FLAG_FILE.exists():
+        return {"paused": False, "limit": None}
+    try:
+        d = json.loads(_LOOP_FLAG_FILE.read_text())
+        return {"paused": bool(d.get("paused")), "limit": d.get("limit")}
+    except Exception:
+        return {"paused": False, "limit": None}
+
+
+def _write_loop_state(**patch) -> dict:
+    state = _read_loop_state()
+    state.update(patch)
+    _LOOP_FLAG_FILE.write_text(json.dumps(state))
+    return state
+
+
+@app.get("/api/auto_queue")
+def get_auto_queue():
+    """Return the (possibly limited) ordered list of pending wellfound-apply
+    bundles for the auto-loop bookmarklet to process."""
+    state = _read_loop_state()
+    out = []
+    if PENDING_ROOT.exists():
+        for d in sorted(PENDING_ROOT.iterdir()):
+            if not d.is_dir():
+                continue
+            rj = d / "result.json"
+            if not rj.exists():
+                continue
+            try:
+                data = json.loads(rj.read_text())
+            except Exception:
+                continue
+            if (data.get("apply_mode") or "wellfound").lower() == "external":
+                continue
+            if data.get("url") and data.get("listing_id"):
+                out.append({
+                    "listing_id": str(data["listing_id"]),
+                    "url": data["url"],
+                    "company": data.get("company") or "",
+                    "title": data.get("title") or "",
+                })
+    out.sort(key=lambda b: (b.get("company") or "").lower())
+    limit = state.get("limit")
+    total = len(out)
+    if isinstance(limit, int) and limit > 0:
+        out = out[:limit]
+    return {"queue": out, "count": len(out), "total_available": total,
+            "paused": state.get("paused", False), "limit": limit}
+
+
+@app.post("/api/loop_pause")
+def loop_pause():
+    _write_loop_state(paused=True)
+    return {"ok": True, "paused": True}
+
+
+@app.post("/api/loop_resume")
+def loop_resume():
+    _write_loop_state(paused=False)
+    return {"ok": True, "paused": False}
+
+
+@app.post("/api/loop_set_limit")
+def loop_set_limit(payload: dict):
+    """Body: {"limit": 5} caps at 5; {"limit": null} removes cap."""
+    raw = payload.get("limit") if isinstance(payload, dict) else None
+    if raw in (None, "", 0, "0"):
+        limit = None
+    else:
+        try:
+            limit = int(raw)
+            if limit < 0:
+                limit = None
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"invalid limit: {raw!r}"}
+    _write_loop_state(limit=limit)
+    return {"ok": True, "limit": limit}
+
+
 # ---------- Smart bookmarklet endpoint: answer all questions in a modal -----
 
 _INTEREST_RE = re.compile(
@@ -706,28 +898,72 @@ async def answer_questions(payload: dict):
         except Exception:
             pass
 
-    # Route: "interest" questions get answered from the bundle's pre-prepped
-    # blurb (higher-quality, no LLM cost). Everything else goes through LLM.
+    # Three buckets:
+    #   1. preanswered = bundle blurb covers it (interest q + bundle exists)
+    #   2. fitpitch_qs = interest q but NO bundle → run full FIT-PITCH pipeline
+    #      (multi-project, 4 paragraphs, 280-450 words, same quality as dashboard)
+    #   3. remaining_qs = everything else → short gpt-4o-mini answer
     preanswered: dict[str, str] = {}
-    remaining_qs = []
+    fitpitch_qs: list[dict] = []
+    remaining_qs: list[dict] = []
     for q in questions:
         prompt = (q.get("prompt") or "").lower()
-        if bundle_blurb and _INTEREST_RE.search(prompt):
+        is_interest = bool(_INTEREST_RE.search(prompt))
+        if is_interest and bundle_blurb:
             preanswered[q.get("name")] = bundle_blurb
+        elif is_interest:
+            fitpitch_qs.append(q)
         else:
             remaining_qs.append(q)
 
-    if not remaining_qs:
-        return {
-            "ok": True,
-            "answers": [{"name": n, "answer": scrub_ai_tells(a)} for n, a in preanswered.items()],
-            "count": len(preanswered),
-            "source": "bundle",
-            "bundle_used": True,
-        }
+    # Run full FIT-PITCH pipeline for interest questions that lack a bundle.
+    fitpitch_answers: dict[str, str] = {}
+    if fitpitch_qs:
+        try:
+            from blurb import compose_blurb
+            blurb_text = compose_blurb(jd=jd, title=title, company=company,
+                                       min_projects=3, max_projects=4)
+            for q in fitpitch_qs:
+                fitpitch_answers[q.get("name")] = blurb_text
+        except Exception as e:
+            print(f"[answer_questions] compose_blurb failed: {e}", file=sys.stderr)
+            remaining_qs.extend(fitpitch_qs)
+            fitpitch_qs = []
 
     profile = load_profile()
     pool = format_pool_for_prompt()
+
+    # JD keyword extraction
+    from blurb import extract_jd_keywords
+    jd_keywords = extract_jd_keywords(jd, title, company) if jd else []
+    kw_block = ""
+    if jd_keywords:
+        kw_block = (
+            f"\nJD KEYWORDS (mirror these in answers where they naturally fit):\n"
+            f"  {', '.join(jd_keywords)}\n"
+        )
+
+    # If everything pre-answered, skip gpt-4o-mini
+    if not remaining_qs:
+        out = []
+        out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "bundle"} for n, a in preanswered.items())
+        out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "fitpitch"} for n, a in fitpitch_answers.items())
+        kw_hits = 0
+        if jd_keywords:
+            text = " ".join(a["answer"].lower() for a in out)
+            kw_hits = sum(1 for k in jd_keywords if k.lower() in text)
+        return {
+            "ok": True,
+            "answers": out,
+            "count": len(out),
+            "source": "bundle" if preanswered and not fitpitch_answers else ("fitpitch" if fitpitch_answers and not preanswered else "mixed"),
+            "bundle_used": bool(preanswered),
+            "fitpitch_used": bool(fitpitch_answers),
+            "jd_keywords": jd_keywords,
+            "jd_keyword_hits": kw_hits,
+            "jd_keyword_total": len(jd_keywords),
+        }
+
     questions_dump = "\n".join(
         f"Q{i+1} (name={(q.get('name') or 'q'+str(i))!r}): {q.get('prompt') or '(no prompt)'}"
         for i, q in enumerate(remaining_qs)
@@ -737,7 +973,7 @@ ROLE: {title or '(unknown)'}
 
 JD (first 3500 chars):
 {jd[:3500]}
-
+{kw_block}
 QUESTIONS to answer ({len(remaining_qs)}):
 {questions_dump}
 
@@ -763,16 +999,58 @@ JSON only: {{"answers": [{{"name": "<verbatim>", "answer": "..."}}, ...]}}"""
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
-    out = [{"name": n, "answer": scrub_ai_tells(a), "source": "bundle"} for n, a in preanswered.items()]
+    # Retry batch up to 2x if JD keyword coverage below target
+    for _ in range(2):
+        if not jd_keywords:
+            break
+        llm_text = " ".join((a.get("answer") or "").lower() for a in (parsed.get("answers") or []))
+        all_text = llm_text + " " + " ".join(a.lower() for a in fitpitch_answers.values()) + " " + " ".join(a.lower() for a in preanswered.values())
+        missed = [k for k in jd_keywords if k.lower() not in all_text]
+        if len(missed) <= 1:
+            break
+        kw_feedback = (
+            f"\n\nYou missed JD keywords: {', '.join(missed)}. Re-output ALL answers, "
+            f"naturally incorporating these by paraphrasing existing project facts. "
+            f"Output JSON only."
+        )
+        try:
+            resp2 = client.chat.completions.create(
+                model="gpt-4o-mini", max_tokens=2500, temperature=0.55,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": answer_question_prompt(profile)},
+                    {"role": "user", "content": user + kw_feedback},
+                ],
+            )
+            parsed = json.loads(resp2.choices[0].message.content or "{}")
+        except Exception:
+            break
+
+    out = []
+    out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "bundle"} for n, a in preanswered.items())
+    out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "fitpitch"} for n, a in fitpitch_answers.items())
     for a in parsed.get("answers", []):
         ans = scrub_ai_tells(a.get("answer", "") or "")
         out.append({"name": a.get("name"), "answer": ans, "source": "llm"})
+    kw_hits = 0
+    if jd_keywords:
+        text = " ".join(a["answer"].lower() for a in out if a.get("source") in ("llm", "fitpitch"))
+        kw_hits = sum(1 for k in jd_keywords if k.lower() in text)
+    sources = {a["source"] for a in out}
+    if sources == {"bundle"}: source_label = "bundle"
+    elif sources == {"fitpitch"}: source_label = "fitpitch"
+    elif sources == {"llm"}: source_label = "llm"
+    else: source_label = "mixed"
     return {
         "ok": True,
         "answers": out,
         "count": len(out),
-        "source": "mixed" if preanswered and remaining_qs else ("bundle" if preanswered else "llm"),
+        "source": source_label,
         "bundle_used": bool(preanswered),
+        "fitpitch_used": bool(fitpitch_answers),
+        "jd_keywords": jd_keywords,
+        "jd_keyword_hits": kw_hits,
+        "jd_keyword_total": len(jd_keywords),
     }
 
 
