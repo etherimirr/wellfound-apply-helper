@@ -1,0 +1,37 @@
+# Your personal data — never commit
+profile.json
+projects/
+auto_apply_wellfound/
+.openai_key
+.anthropic_key
+.env
+.env.local
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+venv/
+.venv/
+
+# Logs / state
+*.log
+/tmp/wf_*.json
+/tmp/prep*.log
+/tmp/wf_dash.log
+
+# Local Chrome profile (Auto Open & Fill path)
+.apply_copilot_browser*/

@@ -1,0 +1,48 @@
+{
+  "_comment": "Copy this file to profile.json and fill in your own info. The LLM prompts read this at runtime — every blurb references the fields below. profile.json is gitignored by default, so your real values never leave your machine.",
+
+  "name": "Your Full Name",
+  "degree": "M.S. Computer Science",
+  "school": "Your University",
+  "school_short": "YourU",
+  "grad_date": "May 2026",
+  "gpa": "3.9",
+  "undergrad": "B.S. Computer Science, Other University, 2024",
+
+  "email": "you@example.edu",
+  "phone": "(555) 123-4567",
+  "github": "your-github-handle",
+  "linkedin": "https://www.linkedin.com/in/your-handle",
+  "portfolio": "https://your-portfolio.com",
+
+  "location": "New York City",
+  "visa_status": "F-1 (CPT eligible)",
+  "_visa_examples": "Examples: 'US citizen' | 'Green card holder' | 'F-1 (CPT eligible)' | 'F-1 (OPT until <date>)' | 'H-1B' | 'Will require sponsorship'",
+
+  "stack": "Python, FastAPI, React, AWS, PyTorch",
+  "_stack_note": "Your headline tech stack — surfaces in closing lines + opening hooks.",
+
+  "voice": "tired-but-confident grad student writing to a small team where her output will be visible. Not a marketing brochure.",
+  "_voice_note": "How the LLM should sound when writing your blurbs. Tweak to your style.",
+
+  "default_radio_answers": {
+    "visa_sponsorship": "yes",
+    "us_citizen": "no",
+    "willing_to_travel": "yes",
+    "relocate_to_nyc": "yes",
+    "relocate_general": "yes",
+    "authorized_to_work_via_cpt": "yes",
+    "available_immediately": "yes",
+    "over_18": "yes",
+    "felony": "no"
+  },
+  "_default_radio_note": "Bookmarklet auto-fills Yes/No radio buttons using these defaults when it can match the question text. Set 'us_citizen' to 'yes' if you ARE a US citizen and want Yes for those questions.",
+
+  "forbidden_topics": [
+    "the wellfound-apply-helper itself",
+    "job-application bot",
+    "auto-apply",
+    "resume-writing tool"
+  ],
+  "_forbidden_note": "Topics the LLM must NEVER mention in a blurb to recruiters. Add anything related to this tool or other meta-tooling you'd find embarrassing to expose."
+}
