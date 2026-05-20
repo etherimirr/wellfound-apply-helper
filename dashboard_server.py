@@ -257,10 +257,12 @@ _SMART_BOOKMARKLET_JS = (
     "let radiosFilled=0;"
     "if(Object.keys(radioGroups).length){for(const name of Object.keys(radioGroups)){const radios=radioGroups[name];if(radios.length<2)continue;let qtext='';let p=radios[0].closest('label')?.parentElement||radios[0].parentElement;for(let d=0;d<6&&p;d++){const t=(p.textContent||'').trim();if(t&&t.length>10&&t.length<400){qtext=t.split(/\\n/)[0].trim();break;}p=p.parentElement;}const ql=qtext.toLowerCase();let pick=null;if(/visa|sponsor|h[\\s-]?1b|opt|cpt/.test(ql))pick='yes';else if(/citizen|green card|permanent resident/.test(ql))pick='no';else if(/willing to travel/.test(ql))pick='yes';else if(/relocate|live in.*new york|nyc/.test(ql))pick='yes';else if(/authorized to work|legally allowed/.test(ql))pick='yes';else if(/start.*immediate|available.*start/.test(ql))pick='yes';else if(/over 18|at least 18/.test(ql))pick='yes';else if(/felony|criminal|convicted/.test(ql))pick='no';else if(/(remote|hybrid|onsite|in[- ]?office)/.test(ql))pick='__skip__';if(pick&&pick!=='__skip__'){const target=radios.find(r=>{const lbl=r.closest('label')?.textContent||r.value||'';return new RegExp('^\\\\s*'+pick+'\\\\b','i').test(lbl);});if(target&&!target.checked){target.click();radiosFilled++;}}}}"
     "if(!tas.length){if(radiosFilled){alert('Filled '+radiosFilled+' yes/no question(s).');return;}alert('No textareas or radios found. Click Apply first.');return;}"
-    "const getPrompt=(ta)=>{let p=ta.parentElement;for(let d=0;d<6&&p;d++){const txt=(p.textContent||'').replace(ta.value||'','').trim();if(txt&&txt.length>5&&txt.length<500){const first=txt.split(/\\n+/)[0].trim();if(first)return first.slice(0,400);}p=p.parentElement;}return '';};"
+    "const getPrompt=(ta)=>{if(ta.labels&&ta.labels.length){const l=(ta.labels[0].textContent||'').trim();if(l&&l.length<400)return l;}const aria=ta.getAttribute('aria-label')||'';if(aria&&aria.length<400)return aria.trim();const ph=ta.placeholder||'';if(ph&&ph.length<400)return ph.trim();let prev=ta.previousElementSibling;for(let i=0;i<3&&prev;i++){const t=(prev.textContent||'').trim();if(t&&t.length>3&&t.length<400)return t.split(/\\n+/)[0].trim().slice(0,400);prev=prev.previousElementSibling;}let p=ta.parentElement;for(let d=0;d<3&&p;d++){const lbl=p.querySelector('label,h3,h4');if(lbl&&lbl.textContent){const t=lbl.textContent.trim();if(t&&t.length>3&&t.length<400)return t.split(/\\n+/)[0].trim().slice(0,400);}const ownText=Array.from(p.childNodes).filter(n=>n.nodeType===3).map(n=>(n.textContent||'').trim()).filter(Boolean).join(' ');if(ownText&&ownText.length>3&&ownText.length<400)return ownText.slice(0,400);p=p.parentElement;}return '';};"
     "const questions=tas.map((ta,i)=>({name:ta.name||'textarea_'+i,prompt:getPrompt(ta),idx:i}));"
     "const jdEl=document.querySelector('[class*=\"jdBody\"],[class*=\"description\"],main article,main section');"
     "const jd=((jdEl&&jdEl.innerText)||document.body.innerText||'').slice(0,4500);"
+    "const getSkills=()=>{const heads=document.querySelectorAll('h1,h2,h3,h4,h5,h6,strong,b,dt');let chips=[];for(const h of heads){const tx=(h.textContent||'').trim();if(!/^skills?$/i.test(tx))continue;let p=h.parentElement;for(let d=0;d<4&&p;d++){const cands=Array.from(p.querySelectorAll('span,div,a,li,button')).filter(e=>{const t=(e.textContent||'').trim();if(!t||t.length<2||t.length>200)return false;if(/^skills?$/i.test(t))return false;if(e.children.length>2)return false;if(e.contains(h)||h.contains(e))return false;return true;}).map(e=>(e.textContent||'').trim());if(cands.length>=2&&cands.length<=40){chips=cands;break;}p=p.parentElement;}if(chips.length)break;}return [...new Set(chips)].slice(0,30).join(' | ');};"
+    "const skillsText=getSkills();"
     "const company=document.querySelector('a[href^=\"/company/\"]')?.textContent?.trim()||document.title.split(' at ')[1]?.split(' \\u2022 ')[0]||'';"
     "const title=document.querySelector('h1,h2')?.textContent?.trim()||document.title.split(' at ')[0]||'';"
     "const pd=document.createElement('div');"
@@ -268,13 +270,15 @@ _SMART_BOOKMARKLET_JS = (
     "pd.innerHTML='Generating '+questions.length+' answer(s)...';"
     "document.body.appendChild(pd);"
     "let resp;"
-    "try{resp=await(await fetch('http://localhost:9876/api/answer_questions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({listing_id:lid,company,title,jd,questions})})).json();}catch(e){pd.innerHTML='Backend unreachable (localhost:9876).';setTimeout(()=>pd.remove(),5000);return;}"
+    "try{resp=await(await fetch('http://localhost:9876/api/answer_questions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({listing_id:lid,company,title,jd,skills_text:skillsText,questions})})).json();}catch(e){pd.innerHTML='Backend unreachable (localhost:9876).';setTimeout(()=>pd.remove(),5000);return;}"
     "if(!resp.ok){pd.innerHTML='Error: '+(resp.error||'failed');setTimeout(()=>pd.remove(),5000);return;}"
     "let filled=0;"
     "for(const ans of resp.answers||[]){const ta=tas.find(t=>(t.name||'')===ans.name)||tas[(ans.idx||0)];if(!ta||!ans.answer)continue;const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;setter.call(ta,ans.answer);ta.dispatchEvent(new Event('input',{bubbles:true}));ta.dispatchEvent(new Event('change',{bubbles:true}));filled++;}"
     "let srcLabel;"
     "if(resp.source==='bundle'){srcLabel='\\u267b\\ufe0f Reused dashboard blurb (no LLM cost)';pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';}"
+    "else if(resp.source==='bundle+patch'){srcLabel='\\u267b\\ufe0f Bundle + JD-keyword patch (gpt-4o-mini)';pd.style.background='#d1fae5';pd.style.borderColor='#059669';}"
     "else if(resp.source==='fitpitch'){srcLabel='\\ud83d\\udcdd Full FIT-PITCH (gpt-4o, 4-paragraph)';pd.style.background='#e0e7ff';pd.style.borderColor='#6366f1';}"
+    "else if(resp.source==='fitpitch+patch'){srcLabel='\\ud83d\\udcdd FIT-PITCH + JD-keyword patch';pd.style.background='#ddd6fe';pd.style.borderColor='#7c3aed';}"
     "else if(resp.source==='mixed'){srcLabel='\\u267b\\ufe0f Mixed: bundle + LLM';pd.style.background='#fef3c7';pd.style.borderColor='#f59e0b';}"
     "else{srcLabel='\\ud83e\\udd16 Fresh gpt-4o-mini (short answer)';pd.style.background='#dbeafe';pd.style.borderColor='#2563eb';}"
     "let kwLine='';if(resp.jd_keyword_total){kwLine='<br><span style=\"font-size:11px;color:#475569;\">JD keywords used: '+resp.jd_keyword_hits+'/'+resp.jd_keyword_total+' ('+(resp.jd_keywords||[]).slice(0,5).join(', ')+')</span>';}"
@@ -313,10 +317,12 @@ _AUTO_LOOP_BOOKMARKLET_JS = (
     "if(modalRoot){for(const radio of modalRoot.querySelectorAll('input[type=\"radio\"]')){if(!radio.name)continue;(radioGroups[radio.name]=radioGroups[radio.name]||[]).push(radio);}}"
     "let radiosFilled=0;"
     "if(Object.keys(radioGroups).length){for(const name of Object.keys(radioGroups)){const radios=radioGroups[name];if(radios.length<2)continue;let qtext='';let p=radios[0].closest('label')?.parentElement||radios[0].parentElement;for(let d=0;d<6&&p;d++){const t=(p.textContent||'').trim();if(t&&t.length>10&&t.length<400){qtext=t.split(/\\n/)[0].trim();break;}p=p.parentElement;}const ql=qtext.toLowerCase();let pick=null;if(/visa|sponsor|h[\\s-]?1b|opt|cpt/.test(ql))pick='yes';else if(/citizen|green card|permanent resident/.test(ql))pick='no';else if(/willing to travel/.test(ql))pick='yes';else if(/relocate|live in.*new york|nyc/.test(ql))pick='yes';else if(/authorized to work|legally allowed/.test(ql))pick='yes';else if(/start.*immediate|available.*start/.test(ql))pick='yes';else if(/over 18|at least 18/.test(ql))pick='yes';else if(/felony|criminal|convicted/.test(ql))pick='no';else if(/(remote|hybrid|onsite|in[- ]?office)/.test(ql))pick='__skip__';if(pick&&pick!=='__skip__'){const target=radios.find(r=>{const lbl=r.closest('label')?.textContent||r.value||'';return new RegExp('^\\\\s*'+pick+'\\\\b','i').test(lbl);});if(target&&!target.checked){target.click();radiosFilled++;}}}}"
-    "const getPrompt=(ta)=>{let p=ta.parentElement;for(let d=0;d<6&&p;d++){const txt=(p.textContent||'').replace(ta.value||'','').trim();if(txt&&txt.length>5&&txt.length<500){const first=txt.split(/\\n+/)[0].trim();if(first)return first.slice(0,400);}p=p.parentElement;}return '';};"
+    "const getPrompt=(ta)=>{if(ta.labels&&ta.labels.length){const l=(ta.labels[0].textContent||'').trim();if(l&&l.length<400)return l;}const aria=ta.getAttribute('aria-label')||'';if(aria&&aria.length<400)return aria.trim();const ph=ta.placeholder||'';if(ph&&ph.length<400)return ph.trim();let prev=ta.previousElementSibling;for(let i=0;i<3&&prev;i++){const t=(prev.textContent||'').trim();if(t&&t.length>3&&t.length<400)return t.split(/\\n+/)[0].trim().slice(0,400);prev=prev.previousElementSibling;}let p=ta.parentElement;for(let d=0;d<3&&p;d++){const lbl=p.querySelector('label,h3,h4');if(lbl&&lbl.textContent){const t=lbl.textContent.trim();if(t&&t.length>3&&t.length<400)return t.split(/\\n+/)[0].trim().slice(0,400);}const ownText=Array.from(p.childNodes).filter(n=>n.nodeType===3).map(n=>(n.textContent||'').trim()).filter(Boolean).join(' ');if(ownText&&ownText.length>3&&ownText.length<400)return ownText.slice(0,400);p=p.parentElement;}return '';};"
     "const questions=tas.map((ta,i)=>({name:ta.name||'textarea_'+i,prompt:getPrompt(ta),idx:i}));"
     "const jdEl=document.querySelector('[class*=\"jdBody\"],[class*=\"description\"],main article,main section');"
     "const jd=((jdEl&&jdEl.innerText)||document.body.innerText||'').slice(0,4500);"
+    "const getSkills=()=>{const heads=document.querySelectorAll('h1,h2,h3,h4,h5,h6,strong,b,dt');let chips=[];for(const h of heads){const tx=(h.textContent||'').trim();if(!/^skills?$/i.test(tx))continue;let p=h.parentElement;for(let d=0;d<4&&p;d++){const cands=Array.from(p.querySelectorAll('span,div,a,li,button')).filter(e=>{const t=(e.textContent||'').trim();if(!t||t.length<2||t.length>200)return false;if(/^skills?$/i.test(t))return false;if(e.children.length>2)return false;if(e.contains(h)||h.contains(e))return false;return true;}).map(e=>(e.textContent||'').trim());if(cands.length>=2&&cands.length<=40){chips=cands;break;}p=p.parentElement;}if(chips.length)break;}return [...new Set(chips)].slice(0,30).join(' | ');};"
+    "const skillsText=getSkills();"
     "const company=document.querySelector('a[href^=\"/company/\"]')?.textContent?.trim()||document.title.split(' at ')[1]?.split(' \\u2022 ')[0]||'';"
     "const title=document.querySelector('h1,h2')?.textContent?.trim()||document.title.split(' at ')[0]||'';"
     "const pd=document.createElement('div');"
@@ -325,11 +331,11 @@ _AUTO_LOOP_BOOKMARKLET_JS = (
     "pd.innerHTML='\\ud83d\\udd01 Auto loop \\u2014 '+progress+' job(s) left<br>Generating '+questions.length+' answer(s)...';"
     "document.body.appendChild(pd);"
     "let resp;"
-    "try{resp=await(await fetch('http://localhost:9876/api/answer_questions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({listing_id:lid,company,title,jd,questions})})).json();}catch(e){pd.innerHTML='Backend unreachable.';setTimeout(()=>pd.remove(),5000);return;}"
+    "try{resp=await(await fetch('http://localhost:9876/api/answer_questions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({listing_id:lid,company,title,jd,skills_text:skillsText,questions})})).json();}catch(e){pd.innerHTML='Backend unreachable.';setTimeout(()=>pd.remove(),5000);return;}"
     "if(!resp.ok){pd.innerHTML='Error: '+(resp.error||'failed');return;}"
     "let filled=0;"
     "for(const ans of resp.answers||[]){const ta=tas.find(t=>(t.name||'')===ans.name)||tas[(ans.idx||0)];if(!ta||!ans.answer)continue;const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;setter.call(ta,ans.answer);ta.dispatchEvent(new Event('input',{bubbles:true}));ta.dispatchEvent(new Event('change',{bubbles:true}));filled++;}"
-    "let srcLabel='';if(resp.source==='bundle'){srcLabel='\\u267b\\ufe0f Reused bundle (free)';pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';}else if(resp.source==='fitpitch'){srcLabel='\\ud83d\\udcdd Full FIT-PITCH (gpt-4o)';pd.style.background='#e0e7ff';pd.style.borderColor='#6366f1';}else if(resp.source==='mixed'){srcLabel='\\u267b\\ufe0f Mixed';pd.style.background='#fef3c7';}else{srcLabel='\\ud83e\\udd16 gpt-4o-mini';pd.style.background='#dbeafe';pd.style.borderColor='#2563eb';}"
+    "let srcLabel='';if(resp.source==='bundle'){srcLabel='\\u267b\\ufe0f Reused bundle (free)';pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';}else if(resp.source==='bundle+patch'){srcLabel='\\u267b\\ufe0f Bundle + JD patch (mini)';pd.style.background='#d1fae5';pd.style.borderColor='#059669';}else if(resp.source==='fitpitch'){srcLabel='\\ud83d\\udcdd Full FIT-PITCH (gpt-4o)';pd.style.background='#e0e7ff';pd.style.borderColor='#6366f1';}else if(resp.source==='fitpitch+patch'){srcLabel='\\ud83d\\udcdd FIT-PITCH + patch';pd.style.background='#ddd6fe';pd.style.borderColor='#7c3aed';}else if(resp.source==='mixed'){srcLabel='\\u267b\\ufe0f Mixed';pd.style.background='#fef3c7';}else{srcLabel='\\ud83e\\udd16 gpt-4o-mini';pd.style.background='#dbeafe';pd.style.borderColor='#2563eb';}"
     "let kwLine='';if(resp.jd_keyword_total){kwLine='<br><span style=\"font-size:11px;color:#475569;\">JD keywords: '+resp.jd_keyword_hits+'/'+resp.jd_keyword_total+' ('+(resp.jd_keywords||[]).slice(0,6).join(', ')+')</span>';}"
     "pd.innerHTML='\\ud83d\\udd01 Loop ('+progress+' left) - <b>'+(queue[0].company||'?')+'</b><br>Filled '+filled+'/'+tas.length+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+' '+srcLabel+kwLine+'<br><b>Review + click Send</b>. <span style=\"font-size:11px;color:#475569;\">(then auto-advances)</span>';"
     "const SUCCESS_RE=/Congrats!?\\s*Your application has been submitted|SUCCESS!?\\s*YOUR APPLICATION HAS BEEN SENT/i;"
@@ -864,12 +870,169 @@ def loop_set_limit(payload: dict):
 # ---------- Smart bookmarklet endpoint: answer all questions in a modal -----
 
 _INTEREST_RE = re.compile(
-    r"(what\s+interests?\s+you|why\s+(this|us|do you want to work|are you (excited|interested))|"
+    r"(what\s+interests?\s+you|"
+    r"why\s+[\w.\-]{1,30}\s*\??|"     # "Why Yuzu?" / "Why X." / short company names
+    r"why\s+(this|us|do you want to work|are you (excited|interested))|"
     r"tell\s+(us|me)\s+(about\s+yourself|why)|"
     r"about\s+(this\s+(role|company|position)|the\s+role)|"
-    r"motivat(ion|ed))",
+    r"motivat(ion|ed)|"
+    r"cover\s*letter|"                # "Cover Letter" textarea label
+    r"^\s*pitch\s*$|"                 # bare "Pitch"
+    r"introduce\s+yourself|"
+    r"personal\s+statement|"
+    r"what.{0,20}makes\s+you|"        # "What makes you a good fit"
+    r"why\s+(are\s+)?you\s+(the\s+)?(right|good|best)\s+fit)",
     re.IGNORECASE,
 )
+
+
+# ---------- Skills chip extraction & keyword merging -----------------------
+
+_SKILL_NOISE = {
+    "skills", "skill", "tags", "tag", "view all", "see more",
+    "show more", "and", "or", "the", "a", "an", "stack",
+    "experience", "knowledge", "proficiency",
+}
+
+
+def _split_skill_chips(skills_text: str) -> list[str]:
+    """Wellfound's Skills sidebar has chips like:
+        'DevOps', 'AWS/EC2/ELB/S3/DynamoDB', 'Docker',
+        'MERN Stack - Javascript (ES5 & ES6), MongoDB, Express.Js, React'
+    These are RECRUITER-TAGGED keywords — they MUST hit. Split compound
+    chips into atomic tokens so each individual tech becomes a target."""
+    if not skills_text:
+        return []
+    out: list[str] = []
+    raw_chips = [c.strip() for c in skills_text.split("|") if c.strip()]
+    for chip in raw_chips:
+        # Unwrap parens first so "Javascript (ES5 & ES6)" doesn't split mid-paren.
+        unwrapped = re.sub(r"\(([^)]{1,40})\)", r" \1 ", chip)
+        unwrapped = re.sub(r"\s+", " ", unwrapped).strip()
+        has_slash = "/" in unwrapped
+        has_separator = bool(re.search(r"[,&]| - ", unwrapped))
+        # Atomic chip → keep as-is.
+        if not has_slash and not has_separator and 2 <= len(unwrapped) <= 60:
+            if unwrapped.lower() not in (c.lower() for c in out):
+                out.append(unwrapped)
+            continue
+        # Compound → split. Drop the verbatim compound; atoms cover it.
+        parts = re.split(r"[\\/,&]| - ", unwrapped)
+        for p in parts:
+            p = re.sub(r"\s+", " ", p).strip(" .;:-")
+            if not p or len(p) > 50 or p.lower() in _SKILL_NOISE:
+                continue
+            if p.lower() not in (c.lower() for c in out):
+                out.append(p)
+            # Multi-word part with digit-bearing token (e.g. "Javascript ES5")
+            # → also atomize. Skip pure phrases ("MERN Stack", "Generative AI").
+            tokens = p.split()
+            if len(tokens) >= 2 and any(re.search(r"\d", t) for t in tokens):
+                for tok in tokens:
+                    tok = tok.strip(" .;:-")
+                    if not (2 <= len(tok) <= 30):
+                        continue
+                    if tok.lower() in _SKILL_NOISE:
+                        continue
+                    if not re.match(r"^[A-Za-z][A-Za-z0-9.+#-]*$", tok):
+                        continue
+                    if tok.lower() not in (c.lower() for c in out):
+                        out.append(tok)
+    seen, deduped = set(), []
+    for k in out:
+        kl = k.lower()
+        if kl in seen:
+            continue
+        seen.add(kl)
+        deduped.append(k)
+    return deduped[:35]
+
+
+def _merge_skills_into_keywords(jd_keywords: list[str],
+                                  skill_chips: list[str]) -> list[str]:
+    """Skill chips go FIRST — they're recruiter-tagged."""
+    if not skill_chips:
+        return jd_keywords
+    lower_seen = {k.lower() for k in skill_chips}
+    out = list(skill_chips)
+    for k in jd_keywords:
+        if k.lower() not in lower_seen:
+            out.append(k)
+            lower_seen.add(k.lower())
+    return out
+
+
+# ---------- Keyword patch (short addendum, ~120 words, ~3s) ----------------
+
+_PATCH_SYSTEM = """You write a SHORT addendum paragraph (60-100 words) to be
+appended to an existing job-application blurb. The paragraph's job is to
+land specific MISSED keywords from the JD/Skills tags.
+
+Rules:
+- Output 60-100 words. ONE paragraph only.
+- Every keyword on the MISSED list MUST appear in your paragraph (verify
+  before output).
+- Frame as honest familiarity: "I have hands-on experience with X, Y, Z
+  from side-projects and coursework." Or "My stack also includes X (for A),
+  Y (for B), Z." Do NOT fabricate employers, dates, or measurable results.
+- Sound natural and applicant-confident, not like a keyword dump.
+- NEVER use: em dashes (—), leverage, robust, cutting-edge, synergy,
+  harness, transformative, passionate, perfect fit, eager to contribute,
+  modernization, innovative approach, honed, paramount, intricacies.
+
+Output ONLY the paragraph. No JSON, no preamble, no explanation."""
+
+
+def patch_blurb_for_keywords(blurb: str, missed_kws: list[str],
+                              jd: str, company: str, title: str) -> str:
+    """Generate a SHORT (~120-token) addendum covering missed keywords and
+    append to existing blurb. Faster than rewriting the entire blurb. NO
+    retry — falls back to a deterministic familiarity tail if the model
+    still misses any keyword. ~$0.001/job."""
+    if not missed_kws:
+        return blurb
+    try:
+        from blurb import scrub_ai_tells
+    except Exception:
+        scrub_ai_tells = lambda s: s
+    user = f"""COMPANY: {company}
+ROLE: {title}
+
+MISSED KEYWORDS (must ALL appear in your paragraph):
+{', '.join(missed_kws)}
+
+CONTEXT (the existing blurb — for tone reference only, do NOT rewrite it):
+{blurb[:800]}
+
+Write the 60-100 word addendum paragraph now. Cover every missed keyword."""
+    addendum = ""
+    try:
+        client = openai_client()
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=300,
+            temperature=0.4,
+            messages=[
+                {"role": "system", "content": _PATCH_SYSTEM},
+                {"role": "user", "content": user},
+            ],
+        )
+        addendum = (resp.choices[0].message.content or "").strip()
+        if addendum.startswith("```"):
+            addendum = re.sub(r"^```[a-z]*\s*", "", addendum).rstrip("`").strip()
+        addendum = scrub_ai_tells(addendum) if addendum else ""
+    except Exception as e:
+        print(f"[patch_blurb_for_keywords] err: {e}", file=sys.stderr)
+        addendum = ""
+    combined = (blurb.rstrip() + "\n\n" + addendum) if addendum else blurb
+    # Safety net: deterministic tail for any still-missing keywords.
+    low = combined.lower()
+    still_missed = [k for k in missed_kws if k.lower() not in low]
+    if still_missed:
+        tail = (" Also familiar with " + ", ".join(still_missed)
+                + " from coursework and personal side-projects.")
+        combined = combined.rstrip() + tail
+    return combined
 
 
 @app.post("/api/answer_questions")
@@ -881,9 +1044,12 @@ async def answer_questions(payload: dict):
     company = (payload.get("company") or "").strip()
     title = (payload.get("title") or "").strip()
     jd = (payload.get("jd") or "").strip()
+    skills_text = (payload.get("skills_text") or "").strip()
     questions = payload.get("questions") or []
     if not isinstance(questions, list) or not questions:
         return {"ok": False, "error": "no questions in payload"}
+
+    skill_chips = _split_skill_chips(skills_text)
 
     # Enrich from bundle if we have one (gives us pre-prepped blurb + better context)
     bundle_blurb = ""
@@ -933,9 +1099,14 @@ async def answer_questions(payload: dict):
     profile = load_profile()
     pool = format_pool_for_prompt()
 
-    # JD keyword extraction
-    from blurb import extract_jd_keywords
-    jd_keywords = extract_jd_keywords(jd, title, company) if jd else []
+    # JD keyword extraction. Skill chips ≥ 6 → skip the LLM call (saves ~2s).
+    if skill_chips and len(skill_chips) >= 6:
+        jd_keywords = list(skill_chips)
+    else:
+        from blurb import extract_jd_keywords
+        llm_kws = extract_jd_keywords(jd, title, company) if jd else []
+        jd_keywords = _merge_skills_into_keywords(llm_kws, skill_chips)
+
     kw_block = ""
     if jd_keywords:
         kw_block = (
@@ -943,26 +1114,75 @@ async def answer_questions(payload: dict):
             f"  {', '.join(jd_keywords)}\n"
         )
 
-    # If everything pre-answered, skip gpt-4o-mini
+    # If everything pre-answered, skip gpt-4o-mini batch. Run the keyword
+    # patch on bundle + fitpitch outputs so they reflect THIS JD's vocabulary.
     if not remaining_qs:
+        patched_bundle = False
+        if preanswered and jd_keywords:
+            for n, b in list(preanswered.items()):
+                missed = [k for k in jd_keywords if k.lower() not in b.lower()]
+                if len(missed) >= 2:
+                    p = patch_blurb_for_keywords(b, missed, jd, company, title)
+                    if p and p != b:
+                        preanswered[n] = p
+                        patched_bundle = True
+        patched_fitpitch = False
+        if fitpitch_answers and jd_keywords:
+            for n, b in list(fitpitch_answers.items()):
+                missed = [k for k in jd_keywords if k.lower() not in b.lower()]
+                if len(missed) >= 2:
+                    p = patch_blurb_for_keywords(b, missed, jd, company, title)
+                    if p and p != b:
+                        fitpitch_answers[n] = p
+                        patched_fitpitch = True
+        bundle_src = "bundle+patch" if patched_bundle else "bundle"
+        fitpitch_src = "fitpitch+patch" if patched_fitpitch else "fitpitch"
         out = []
-        out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "bundle"} for n, a in preanswered.items())
-        out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "fitpitch"} for n, a in fitpitch_answers.items())
+        out.extend({"name": n, "answer": scrub_ai_tells(a), "source": bundle_src} for n, a in preanswered.items())
+        out.extend({"name": n, "answer": scrub_ai_tells(a), "source": fitpitch_src} for n, a in fitpitch_answers.items())
         kw_hits = 0
         if jd_keywords:
             text = " ".join(a["answer"].lower() for a in out)
             kw_hits = sum(1 for k in jd_keywords if k.lower() in text)
+        if preanswered and not fitpitch_answers:
+            top_src = bundle_src
+        elif fitpitch_answers and not preanswered:
+            top_src = fitpitch_src
+        else:
+            top_src = "mixed"
         return {
             "ok": True,
             "answers": out,
             "count": len(out),
-            "source": "bundle" if preanswered and not fitpitch_answers else ("fitpitch" if fitpitch_answers and not preanswered else "mixed"),
+            "source": top_src,
             "bundle_used": bool(preanswered),
+            "bundle_patched": patched_bundle,
             "fitpitch_used": bool(fitpitch_answers),
+            "fitpitch_patched": patched_fitpitch,
             "jd_keywords": jd_keywords,
             "jd_keyword_hits": kw_hits,
             "jd_keyword_total": len(jd_keywords),
         }
+
+    # Mixed case: also patch bundle / fitpitch in-place before the LLM batch.
+    bundle_patched_names: set = set()
+    if preanswered and jd_keywords:
+        for n, b in list(preanswered.items()):
+            missed = [k for k in jd_keywords if k.lower() not in b.lower()]
+            if len(missed) >= 2:
+                p = patch_blurb_for_keywords(b, missed, jd, company, title)
+                if p and p != b:
+                    preanswered[n] = p
+                    bundle_patched_names.add(n)
+    fitpitch_patched_names: set = set()
+    if fitpitch_answers and jd_keywords:
+        for n, b in list(fitpitch_answers.items()):
+            missed = [k for k in jd_keywords if k.lower() not in b.lower()]
+            if len(missed) >= 2:
+                p = patch_blurb_for_keywords(b, missed, jd, company, title)
+                if p and p != b:
+                    fitpitch_answers[n] = p
+                    fitpitch_patched_names.add(n)
 
     questions_dump = "\n".join(
         f"Q{i+1} (name={(q.get('name') or 'q'+str(i))!r}): {q.get('prompt') or '(no prompt)'}"
@@ -1027,18 +1247,28 @@ JSON only: {{"answers": [{{"name": "<verbatim>", "answer": "..."}}, ...]}}"""
             break
 
     out = []
-    out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "bundle"} for n, a in preanswered.items())
-    out.extend({"name": n, "answer": scrub_ai_tells(a), "source": "fitpitch"} for n, a in fitpitch_answers.items())
+    out.extend({
+        "name": n,
+        "answer": scrub_ai_tells(a),
+        "source": "bundle+patch" if n in bundle_patched_names else "bundle",
+    } for n, a in preanswered.items())
+    out.extend({
+        "name": n,
+        "answer": scrub_ai_tells(a),
+        "source": "fitpitch+patch" if n in fitpitch_patched_names else "fitpitch",
+    } for n, a in fitpitch_answers.items())
     for a in parsed.get("answers", []):
         ans = scrub_ai_tells(a.get("answer", "") or "")
         out.append({"name": a.get("name"), "answer": ans, "source": "llm"})
     kw_hits = 0
     if jd_keywords:
-        text = " ".join(a["answer"].lower() for a in out if a.get("source") in ("llm", "fitpitch"))
+        text = " ".join(a["answer"].lower() for a in out)
         kw_hits = sum(1 for k in jd_keywords if k.lower() in text)
     sources = {a["source"] for a in out}
     if sources == {"bundle"}: source_label = "bundle"
+    elif sources == {"bundle+patch"}: source_label = "bundle+patch"
     elif sources == {"fitpitch"}: source_label = "fitpitch"
+    elif sources == {"fitpitch+patch"}: source_label = "fitpitch+patch"
     elif sources == {"llm"}: source_label = "llm"
     else: source_label = "mixed"
     return {
@@ -1047,7 +1277,9 @@ JSON only: {{"answers": [{{"name": "<verbatim>", "answer": "..."}}, ...]}}"""
         "count": len(out),
         "source": source_label,
         "bundle_used": bool(preanswered),
+        "bundle_patched": bool(bundle_patched_names),
         "fitpitch_used": bool(fitpitch_answers),
+        "fitpitch_patched": bool(fitpitch_patched_names),
         "jd_keywords": jd_keywords,
         "jd_keyword_hits": kw_hits,
         "jd_keyword_total": len(jd_keywords),
