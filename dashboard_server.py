@@ -254,6 +254,8 @@ _SMART_BOOKMARKLET_JS = (
     "const modalRoot=document.querySelector('.ReactModal__Content, [role=\"dialog\"]');"
     "const radioGroups={};"
     "if(modalRoot){for(const radio of modalRoot.querySelectorAll('input[type=\"radio\"]')){if(!radio.name)continue;(radioGroups[radio.name]=radioGroups[radio.name]||[]).push(radio);}}"
+    "let inputsFilled=0;"
+    "try{const pf=await(await fetch('http://localhost:9876/api/profile_fields')).json();if(pf.ok&&modalRoot){const setInp=(el,val)=>{if(!el||!val||el.value)return;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value').set;s.call(el,val);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));inputsFilled++;};const getInputLabel=(inp)=>{if(inp.labels&&inp.labels.length){const l=(inp.labels[0].textContent||'').trim();if(l)return l.toLowerCase();}const aria=inp.getAttribute('aria-label')||'';if(aria)return aria.toLowerCase();const lbId=inp.getAttribute('aria-labelledby');if(lbId){const ref=document.getElementById(lbId);if(ref){const t=(ref.textContent||'').trim();if(t)return t.toLowerCase();}}if(inp.placeholder)return inp.placeholder.toLowerCase();const nameId=((inp.name||'')+' '+(inp.id||'')).toLowerCase();let prev=inp.previousElementSibling;for(let i=0;i<3&&prev;i++){const t=(prev.textContent||'').trim();if(t&&t.length>1&&t.length<100)return (t+' '+nameId).toLowerCase();prev=prev.previousElementSibling;}let p=inp.parentElement;for(let d=0;d<2&&p;d++){const children=Array.from(p.children);const idx=children.findIndex(c=>c===inp||c.contains(inp));if(idx>0){for(let i=idx-1;i>=Math.max(0,idx-3);i--){const c=children[i];const tg=c.tagName;if(tg==='LABEL'||tg==='H3'||tg==='H4'||tg==='P'||tg==='SPAN'||tg==='STRONG'||tg==='B'){const t=(c.textContent||'').trim();if(t&&t.length>1&&t.length<100)return (t+' '+nameId).toLowerCase();}}}p=p.parentElement;}return nameId;};for(const inp of modalRoot.querySelectorAll('input[type=\"url\"],input[type=\"text\"],input[type=\"email\"],input[type=\"tel\"],input:not([type])')){if(!inp.offsetParent)continue;const l=getInputLabel(inp);if(/current\\s*(company|employer|title|role|position)|cover\\s*letter|previous|salary|expected|why|describe|introduce/.test(l))continue;if(/\\blinkedin\\b/.test(l))setInp(inp,pf.linkedin);else if(/\\bgithub\\b/.test(l))setInp(inp,pf.github);else if(/\\bemail\\b/.test(l))setInp(inp,pf.email);else if(/\\bphone\\b|\\btel\\b|\\bmobile\\b/.test(l))setInp(inp,pf.phone);else if(/\\b(website|portfolio|personal\\s*site|other\\s*url)\\b/.test(l))setInp(inp,pf.website);else if(/\\b(first\\s*name|given\\s*name|preferred\\s*name)\\b/.test(l))setInp(inp,pf.firstName);else if(/\\b(last\\s*name|surname|family\\s*name)\\b/.test(l))setInp(inp,pf.lastName);else if(/\\bcity\\b|current\\s*location/.test(l)&&!inp.value)setInp(inp,pf.city);}}}catch(e){console.warn('input fill err',e);}"
     "let radiosFilled=0;"
     "if(Object.keys(radioGroups).length){for(const name of Object.keys(radioGroups)){const radios=radioGroups[name];if(radios.length<2)continue;let qtext='';let p=radios[0].closest('label')?.parentElement||radios[0].parentElement;for(let d=0;d<6&&p;d++){const t=(p.textContent||'').trim();if(t&&t.length>10&&t.length<400){qtext=t.split(/\\n/)[0].trim();break;}p=p.parentElement;}const ql=qtext.toLowerCase();let pick=null;if(/visa|sponsor|h[\\s-]?1b|opt|cpt/.test(ql))pick='yes';else if(/citizen|green card|permanent resident/.test(ql))pick='no';else if(/willing to travel/.test(ql))pick='yes';else if(/relocate|live in.*new york|nyc/.test(ql))pick='yes';else if(/authorized to work|legally allowed/.test(ql))pick='yes';else if(/start.*immediate|available.*start/.test(ql))pick='yes';else if(/over 18|at least 18/.test(ql))pick='yes';else if(/felony|criminal|convicted/.test(ql))pick='no';else if(/(remote|hybrid|onsite|in[- ]?office)/.test(ql))pick='__skip__';if(pick&&pick!=='__skip__'){const target=radios.find(r=>{const lbl=r.closest('label')?.textContent||r.value||'';return new RegExp('^\\\\s*'+pick+'\\\\b','i').test(lbl);});if(target&&!target.checked){target.click();radiosFilled++;}}}}"
     "if(!tas.length){if(radiosFilled){alert('Filled '+radiosFilled+' yes/no question(s).');return;}alert('No textareas or radios found. Click Apply first.');return;}"
@@ -282,7 +284,7 @@ _SMART_BOOKMARKLET_JS = (
     "else if(resp.source==='mixed'){srcLabel='\\u267b\\ufe0f Mixed: bundle + LLM';pd.style.background='#fef3c7';pd.style.borderColor='#f59e0b';}"
     "else{srcLabel='\\ud83e\\udd16 Fresh gpt-4o-mini (short answer)';pd.style.background='#dbeafe';pd.style.borderColor='#2563eb';}"
     "let kwLine='';if(resp.jd_keyword_total){kwLine='<br><span style=\"font-size:11px;color:#475569;\">JD keywords used: '+resp.jd_keyword_hits+'/'+resp.jd_keyword_total+' ('+(resp.jd_keywords||[]).slice(0,5).join(', ')+')</span>';}"
-    "pd.innerHTML='Filled '+filled+'/'+tas.length+' textarea(s)'+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+'<br><b>'+srcLabel+'</b>'+kwLine+'<br>Review + Send. <span style=\"font-size:11px;color:#475569;\">(watching for Send banner...)</span>';"
+    "pd.innerHTML='Filled '+filled+'/'+tas.length+' textarea(s)'+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+(inputsFilled?' + '+inputsFilled+' input(s)':'')+'<br><b>'+srcLabel+'</b>'+kwLine+'<br>Review + Send. <span style=\"font-size:11px;color:#475569;\">(watching for Send banner...)</span>';"
     "const SUCCESS_RE=/Congrats!?\\s*Your application has been submitted|SUCCESS!?\\s*YOUR APPLICATION HAS BEEN SENT/i;"
     "const watchStart=Date.now();"
     "const watcher=setInterval(async()=>{"
@@ -315,6 +317,8 @@ _AUTO_LOOP_BOOKMARKLET_JS = (
     "const modalRoot=document.querySelector('.ReactModal__Content, [role=\"dialog\"]');"
     "const radioGroups={};"
     "if(modalRoot){for(const radio of modalRoot.querySelectorAll('input[type=\"radio\"]')){if(!radio.name)continue;(radioGroups[radio.name]=radioGroups[radio.name]||[]).push(radio);}}"
+    "let inputsFilled=0;"
+    "try{const pf=await(await fetch('http://localhost:9876/api/profile_fields')).json();if(pf.ok&&modalRoot){const setInp=(el,val)=>{if(!el||!val||el.value)return;const s=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value').set;s.call(el,val);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));inputsFilled++;};const getInputLabel=(inp)=>{if(inp.labels&&inp.labels.length){const l=(inp.labels[0].textContent||'').trim();if(l)return l.toLowerCase();}const aria=inp.getAttribute('aria-label')||'';if(aria)return aria.toLowerCase();const lbId=inp.getAttribute('aria-labelledby');if(lbId){const ref=document.getElementById(lbId);if(ref){const t=(ref.textContent||'').trim();if(t)return t.toLowerCase();}}if(inp.placeholder)return inp.placeholder.toLowerCase();const nameId=((inp.name||'')+' '+(inp.id||'')).toLowerCase();let prev=inp.previousElementSibling;for(let i=0;i<3&&prev;i++){const t=(prev.textContent||'').trim();if(t&&t.length>1&&t.length<100)return (t+' '+nameId).toLowerCase();prev=prev.previousElementSibling;}let p=inp.parentElement;for(let d=0;d<2&&p;d++){const children=Array.from(p.children);const idx=children.findIndex(c=>c===inp||c.contains(inp));if(idx>0){for(let i=idx-1;i>=Math.max(0,idx-3);i--){const c=children[i];const tg=c.tagName;if(tg==='LABEL'||tg==='H3'||tg==='H4'||tg==='P'||tg==='SPAN'||tg==='STRONG'||tg==='B'){const t=(c.textContent||'').trim();if(t&&t.length>1&&t.length<100)return (t+' '+nameId).toLowerCase();}}}p=p.parentElement;}return nameId;};for(const inp of modalRoot.querySelectorAll('input[type=\"url\"],input[type=\"text\"],input[type=\"email\"],input[type=\"tel\"],input:not([type])')){if(!inp.offsetParent)continue;const l=getInputLabel(inp);if(/current\\s*(company|employer|title|role|position)|cover\\s*letter|previous|salary|expected|why|describe|introduce/.test(l))continue;if(/\\blinkedin\\b/.test(l))setInp(inp,pf.linkedin);else if(/\\bgithub\\b/.test(l))setInp(inp,pf.github);else if(/\\bemail\\b/.test(l))setInp(inp,pf.email);else if(/\\bphone\\b|\\btel\\b|\\bmobile\\b/.test(l))setInp(inp,pf.phone);else if(/\\b(website|portfolio|personal\\s*site|other\\s*url)\\b/.test(l))setInp(inp,pf.website);else if(/\\b(first\\s*name|given\\s*name|preferred\\s*name)\\b/.test(l))setInp(inp,pf.firstName);else if(/\\b(last\\s*name|surname|family\\s*name)\\b/.test(l))setInp(inp,pf.lastName);else if(/\\bcity\\b|current\\s*location/.test(l)&&!inp.value)setInp(inp,pf.city);}}}catch(e){console.warn('input fill err',e);}"
     "let radiosFilled=0;"
     "if(Object.keys(radioGroups).length){for(const name of Object.keys(radioGroups)){const radios=radioGroups[name];if(radios.length<2)continue;let qtext='';let p=radios[0].closest('label')?.parentElement||radios[0].parentElement;for(let d=0;d<6&&p;d++){const t=(p.textContent||'').trim();if(t&&t.length>10&&t.length<400){qtext=t.split(/\\n/)[0].trim();break;}p=p.parentElement;}const ql=qtext.toLowerCase();let pick=null;if(/visa|sponsor|h[\\s-]?1b|opt|cpt/.test(ql))pick='yes';else if(/citizen|green card|permanent resident/.test(ql))pick='no';else if(/willing to travel/.test(ql))pick='yes';else if(/relocate|live in.*new york|nyc/.test(ql))pick='yes';else if(/authorized to work|legally allowed/.test(ql))pick='yes';else if(/start.*immediate|available.*start/.test(ql))pick='yes';else if(/over 18|at least 18/.test(ql))pick='yes';else if(/felony|criminal|convicted/.test(ql))pick='no';else if(/(remote|hybrid|onsite|in[- ]?office)/.test(ql))pick='__skip__';if(pick&&pick!=='__skip__'){const target=radios.find(r=>{const lbl=r.closest('label')?.textContent||r.value||'';return new RegExp('^\\\\s*'+pick+'\\\\b','i').test(lbl);});if(target&&!target.checked){target.click();radiosFilled++;}}}}"
     "const getPrompt=(ta)=>{if(ta.labels&&ta.labels.length){const l=(ta.labels[0].textContent||'').trim();if(l&&l.length<400)return l;}const aria=ta.getAttribute('aria-label')||'';if(aria&&aria.length<400)return aria.trim();const ph=ta.placeholder||'';if(ph&&ph.length<400)return ph.trim();let prev=ta.previousElementSibling;for(let i=0;i<3&&prev;i++){const t=(prev.textContent||'').trim();if(t&&t.length>3&&t.length<400)return t.split(/\\n+/)[0].trim().slice(0,400);prev=prev.previousElementSibling;}let p=ta.parentElement;for(let d=0;d<3&&p;d++){const lbl=p.querySelector('label,h3,h4');if(lbl&&lbl.textContent){const t=lbl.textContent.trim();if(t&&t.length>3&&t.length<400)return t.split(/\\n+/)[0].trim().slice(0,400);}const ownText=Array.from(p.childNodes).filter(n=>n.nodeType===3).map(n=>(n.textContent||'').trim()).filter(Boolean).join(' ');if(ownText&&ownText.length>3&&ownText.length<400)return ownText.slice(0,400);p=p.parentElement;}return '';};"
@@ -337,7 +341,7 @@ _AUTO_LOOP_BOOKMARKLET_JS = (
     "for(const ans of resp.answers||[]){const ta=tas.find(t=>(t.name||'')===ans.name)||tas[(ans.idx||0)];if(!ta||!ans.answer)continue;const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta),'value').set;setter.call(ta,ans.answer);ta.dispatchEvent(new Event('input',{bubbles:true}));ta.dispatchEvent(new Event('change',{bubbles:true}));filled++;}"
     "let srcLabel='';if(resp.source==='bundle'){srcLabel='\\u267b\\ufe0f Reused bundle (free)';pd.style.background='#dcfce7';pd.style.borderColor='#16a34a';}else if(resp.source==='bundle+patch'){srcLabel='\\u267b\\ufe0f Bundle + JD patch (mini)';pd.style.background='#d1fae5';pd.style.borderColor='#059669';}else if(resp.source==='fitpitch'){srcLabel='\\ud83d\\udcdd Full FIT-PITCH (gpt-4o)';pd.style.background='#e0e7ff';pd.style.borderColor='#6366f1';}else if(resp.source==='fitpitch+patch'){srcLabel='\\ud83d\\udcdd FIT-PITCH + patch';pd.style.background='#ddd6fe';pd.style.borderColor='#7c3aed';}else if(resp.source==='mixed'){srcLabel='\\u267b\\ufe0f Mixed';pd.style.background='#fef3c7';}else{srcLabel='\\ud83e\\udd16 gpt-4o-mini';pd.style.background='#dbeafe';pd.style.borderColor='#2563eb';}"
     "let kwLine='';if(resp.jd_keyword_total){kwLine='<br><span style=\"font-size:11px;color:#475569;\">JD keywords: '+resp.jd_keyword_hits+'/'+resp.jd_keyword_total+' ('+(resp.jd_keywords||[]).slice(0,6).join(', ')+')</span>';}"
-    "pd.innerHTML='\\ud83d\\udd01 Loop ('+progress+' left) - <b>'+(queue[0].company||'?')+'</b><br>Filled '+filled+'/'+tas.length+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+' '+srcLabel+kwLine+'<br><b>Review + click Send</b>. <span style=\"font-size:11px;color:#475569;\">(then auto-advances)</span>';"
+    "pd.innerHTML='\\ud83d\\udd01 Loop ('+progress+' left) - <b>'+(queue[0].company||'?')+'</b><br>Filled '+filled+'/'+tas.length+(radiosFilled?' + '+radiosFilled+' radio(s)':'')+(inputsFilled?' + '+inputsFilled+' input(s)':'')+' '+srcLabel+kwLine+'<br><b>Review + click Send</b>. <span style=\"font-size:11px;color:#475569;\">(then auto-advances)</span>';"
     "const SUCCESS_RE=/Congrats!?\\s*Your application has been submitted|SUCCESS!?\\s*YOUR APPLICATION HAS BEEN SENT/i;"
     "const watchStart=Date.now();"
     "const watcher=setInterval(async()=>{"
@@ -674,6 +678,40 @@ app.add_middleware(
 @app.get("/", response_class=HTMLResponse)
 def index():
     return _render_full(_load_all())
+
+
+@app.get("/api/profile_fields")
+def get_profile_fields():
+    """Return the user's contact / identity fields from profile.json so the
+    bookmarklet can auto-fill LinkedIn / GitHub / email / phone / first-last
+    name / city / website inputs in apply modals.
+
+    Personal data never leaves the local machine — this endpoint is bound
+    to 127.0.0.1 only via the dashboard's CORS config."""
+    try:
+        p = load_profile()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    full_name = (p.get("name") or "").strip()
+    first, last = "", ""
+    if full_name:
+        bits = full_name.split()
+        first = bits[0]
+        last = " ".join(bits[1:]) if len(bits) > 1 else ""
+    return {
+        "ok": True,
+        "linkedin": p.get("linkedin") or "",
+        "github": (
+            p.get("github") if str(p.get("github") or "").startswith("http")
+            else (f"https://github.com/{p.get('github')}" if p.get("github") else "")
+        ),
+        "email": p.get("email") or "",
+        "phone": p.get("phone") or "",
+        "website": p.get("portfolio") or p.get("website") or "",
+        "firstName": p.get("firstName") or p.get("first_name") or first,
+        "lastName": p.get("lastName") or p.get("last_name") or last,
+        "city": p.get("city") or p.get("location") or "",
+    }
 
 
 @app.get("/api/blurb/{listing_id}")
